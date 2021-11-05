@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
 # импорт модулей pytorch
-import torch
 import torchvision.transforms as transform
-from torchvision.models import resnet152
+from torchvision.models import alexnet, vgg19, resnet152, resnet50
 import torch.nn.functional as F
 
 # импорт сторонних модулей
@@ -26,7 +25,7 @@ class ClassifyThread(QtCore.QThread):
     # объект пользовательского сигнала
     classifySignal = QtCore.pyqtSignal(dict)
 
-    def __init__(self, path_to_image: str, parent=None):
+    def __init__(self, path_to_image: str, model_name: str, parent=None):
         '''
         Конструктор класса пользовательского потока
 
@@ -36,6 +35,7 @@ class ClassifyThread(QtCore.QThread):
         '''
         QtCore.QThread.__init__(self, parent)
         self.path_to_image = path_to_image
+        self.model_name    = model_name
 
 
     def run(self):
@@ -57,13 +57,22 @@ class ClassifyThread(QtCore.QThread):
         unsqueezed_image  = transformed_image.unsqueeze_(0)
         # по умолчанию устройством будет CPU
         device            = "cpu"
-        # инициализируем предобученный классификатор ResNet152 и переводим его в режим валидации
-        resnet            = resnet152(pretrained=True)
-        resnet.eval()
+        # выбираем предобученный классификатор и переводим его в режим валидации
+        model = None
+        if self.model_name == "AlexNet":
+            model = alexnet(pretrained=True)
+        elif self.model_name == "VGG19":
+            model = vgg19(pretrained=True)
+        elif self.model_name == "ResNet50":
+            model = resnet50(pretrained=True)
+        elif self.model_name == "ResNet152":
+            model = resnet152(pretrained=True)
+
+        model.eval()
         # перемещаем изображение на устройство
         unsqueezed_image  = unsqueezed_image.to(device)
         # формируем тензор предсказаний и прогоняем его через softmax
-        predictions       = F.softmax(resnet(unsqueezed_image), dim=1)
+        predictions       = F.softmax(model(unsqueezed_image), dim=1)
         # находим индекс наибольшего элемента тензора, означающего наибольшее значение вероятности
         prediction        = int(predictions.argmax())
         # находим название класса из словаря классов ImageNet по значению prediction
@@ -84,6 +93,7 @@ class ClassifierApp(QMainWindow):
     '''
     Класс приложения ClassifierApp
     '''
+
     def __init__(self):
         '''
         Конструктор класса ClassifierApp
@@ -91,6 +101,8 @@ class ClassifierApp(QMainWindow):
         который непосредственно инициализирует интерфейс
          '''
         super(ClassifierApp, self).__init__()
+        self.list_of_models = ["AlexNet", "VGG19", "ResNet50", "ResNet152"]
+        self.model_name     = "" 
         self.initUI()
     
     
@@ -108,8 +120,10 @@ class ClassifierApp(QMainWindow):
         self.imageLabel.setStyleSheet("border: 1px solid black") # визуализируем границы imageLabel
         self.menuAbout_Qt.addAction("About Qt") # добавляем к кнопке панели инструментов About элемент AboutQt
         self.menuAbout_Qt.triggered.connect(self.aboutQt) # по нажатию на которого будет выводиться справка о Qt
+        self.modelsComboBox.addItems(self.list_of_models) # добавляем в ComboBox список моделей
+        self.modelsComboBox.activated[str].connect(self.onActivated) # выбираем по нажатию на элемент ComboBox'а модель
         
-        
+
     def chooseImage(self):
         '''
         Метод для выбора изображения
@@ -150,7 +164,8 @@ class ClassifierApp(QMainWindow):
         Метод, вызывающий поток для классификации изображения
         '''
         path_to_image       = self.textfield.toPlainText()
-        self.classifyThread = ClassifyThread(path_to_image)
+        model_name          = self.model_name
+        self.classifyThread = ClassifyThread(path_to_image, model_name)
         self.classifyThread.classifySignal.connect(self.finish_thread, QtCore.Qt.QueuedConnection)
         self.classifyThread.start()
         
@@ -193,6 +208,16 @@ class ClassifierApp(QMainWindow):
         Метод, выводящий окно сведений о Qt
         '''
         QtWidgets.QMessageBox.aboutQt(self, title="About Qt")
+
+
+    def onActivated(self, model_name: str):
+        '''
+        Метод, фиксирующий в поле model_name класса название модели классификации
+
+        Параметры: 
+                model_name (str): название модели
+        '''
+        self.model_name = model_name
 
 
 if __name__ == "__main__":
