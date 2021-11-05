@@ -92,7 +92,7 @@
     <property name="geometry">
      <rect>
       <x>330</x>
-      <y>100</y>
+      <y>230</y>
       <width>171</width>
       <height>20</height>
      </rect>
@@ -105,7 +105,7 @@
     <property name="geometry">
      <rect>
       <x>330</x>
-      <y>150</y>
+      <y>260</y>
       <width>171</width>
       <height>20</height>
      </rect>
@@ -118,7 +118,7 @@
     <property name="geometry">
      <rect>
       <x>330</x>
-      <y>200</y>
+      <y>290</y>
       <width>171</width>
       <height>20</height>
      </rect>
@@ -137,6 +137,12 @@
      <height>21</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menuAbout_Qt">
+    <property name="title">
+     <string>About</string>
+    </property>
+   </widget>
+   <addaction name="menuAbout_Qt"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>

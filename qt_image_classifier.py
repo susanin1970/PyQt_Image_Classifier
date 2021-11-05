@@ -106,6 +106,8 @@ class ClassifierApp(QMainWindow):
         self.processImage.clicked.connect(self.classify) # по нажатию на эту кнопку будет запущен классификатор на загруженном изображении
         self.processImage.setEnabled(False) # блокируем эту кнопку, т. к. классифицировать пока нечего
         self.imageLabel.setStyleSheet("border: 1px solid black") # визуализируем границы imageLabel
+        self.menuAbout_Qt.addAction("About Qt") # добавляем к кнопке панели инструментов About элемент AboutQt
+        self.menuAbout_Qt.triggered.connect(self.aboutQt) # по нажатию на которого будет выводиться справка о Qt
         
         
     def chooseImage(self):
@@ -184,6 +186,13 @@ class ClassifierApp(QMainWindow):
             )
         # помещаем на лейбл ресайзнутое изображение
         self.imageLabel.setPixmap(pixmap)
+
+
+    def aboutQt(self):
+        '''
+        Метод, выводящий окно сведений о Qt
+        '''
+        QtWidgets.QMessageBox.aboutQt(self, title="About Qt")
 
 
 if __name__ == "__main__":
