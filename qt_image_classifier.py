@@ -14,13 +14,76 @@ import sys
 
 # импорт модулей PyQt
 from PyQt5 import QtWidgets, uic
-from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFileDialog
+from PyQt5.QtWidgets import QMainWindow, QFileDialog
 from PyQt5.QtGui import QPixmap
 from PyQt5 import QtCore
 
-# задаем класс приложения, наследуемый от QMainWindow -- главное окно
+
+class ClassifyThread(QtCore.QThread):
+    '''
+    Класс пользовательского потока для выполнения процесса классификации изображения
+    '''
+    # объект пользовательского сигнала
+    classifySignal = QtCore.pyqtSignal(dict)
+
+    def __init__(self, path_to_image: str, parent=None):
+        '''
+        Конструктор класса пользовательского потока
+
+        Параметры: 
+            path_to_image (str): путь к изображению, которого необходимо классифицировать
+
+        '''
+        QtCore.QThread.__init__(self, parent)
+        self.path_to_image = path_to_image
+
+
+    def run(self):
+        '''
+        Метод, который выполняется при запуске потока
+        В нем непосредственно выполняется классификация 
+        '''
+        # создаем объект трансформации изображения
+        transforms = transform.Compose([
+                transform.Resize((224, 224)),
+                transform.ToTensor(),
+                transform.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+            ])
+        # открываем изображение через PIL.Image
+        opened_image      = Image.open(self.path_to_image)
+        # применяем трансформации к изображению
+        transformed_image = transforms(opened_image)
+        # добавляем размерность батча к изображению, равную 1 
+        unsqueezed_image  = transformed_image.unsqueeze_(0)
+        # по умолчанию устройством будет CPU
+        device            = "cpu"
+        # инициализируем предобученный классификатор ResNet152 и переводим его в режим валидации
+        resnet            = resnet152(pretrained=True)
+        resnet.eval()
+        # перемещаем изображение на устройство
+        unsqueezed_image  = unsqueezed_image.to(device)
+        # формируем тензор предсказаний и прогоняем его через softmax
+        predictions       = F.softmax(resnet(unsqueezed_image), dim=1)
+        # находим индекс наибольшего элемента тензора, означающего наибольшее значение вероятности
+        prediction        = int(predictions.argmax())
+        # находим название класса из словаря классов ImageNet по значению prediction
+        # если названия классов по ключу prediction перечислены через запятую. выбираем самый первый
+        predicted_label   = imagenet_classes[prediction].split(",")[0]
+        # находим значение вероятности по prediction
+        confidence        = float(predictions[0][prediction])
+
+        # передаем данные о классифицированном изображении наружу через пользовательский сигнал
+        self.classifySignal.emit({
+                    "ImageNet class id": prediction,
+                     "Predicted class": predicted_label,
+                     "Confidence": confidence}
+                )
+
+
 class ClassifierApp(QMainWindow):
-    
+    '''
+    Класс приложения ClassifierApp
+    '''
     def __init__(self):
         '''
         Конструктор класса ClassifierApp
@@ -80,50 +143,33 @@ class ClassifierApp(QMainWindow):
         self.processImage.setEnabled(False)
         
         
-        
     def classify(self):
         '''
-        Метод для классификации изображения
+        Метод, вызывающий поток для классификации изображения
         '''
-        # создаем объект трансформации изображения
-        transforms = transform.Compose([
-                transform.Resize((224, 224)),
-                transform.ToTensor(),
-                transform.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            ])
-        # извлекаем путь к изображению из текстового поля
-        path_to_image     = self.textfield.toPlainText()
-        # открываем изображение через PIL.Image
-        opened_image      = Image.open(path_to_image)
-        # применяем трансформации к изображению
-        transformed_image = transforms(opened_image)
-        # добавляем размерность батча к изображению, равную 1 
-        unsqueezed_image  = transformed_image.unsqueeze_(0)
-        # по умолчанию устройством будет CPU
-        device            = "cpu"
-        # инициализируем предобученный классификатор ResNet152 и переводим его в режим валидации
-        resnet            = resnet152(pretrained=True)
-        resnet.eval()
-        # перемещаем изображение на устройство
-        unsqueezed_image  = unsqueezed_image.to(device)
-        # формируем тензор предсказаний и прогоняем его через softmax
-        predictions       = F.softmax(resnet(unsqueezed_image), dim=1)
-        # находим индекс наибольшего элемента тензора, означающего наибольшее значение вероятности
-        prediction        = int(predictions.argmax())
-        # находим название класса из словаря классов ImageNet по значению prediction
-        # если названия классов по ключу prediction перечислены через запятую. выбираем самый первый
-        predicted_label   = imagenet_classes[prediction].split(",")[0]
-        # находим значение вероятности по prediction
-        confidence        = float(predictions[0][prediction])
-        # обновляем текст на лейблах
-        self.imageNetId.setText("ImageNet id: " + str(prediction))
-        self.predictedClass.setText("Predicted class: " + str(predicted_label))
-        self.confidence_label.setText("Confidence: " + str(round(confidence, 3)))
+        path_to_image       = self.textfield.toPlainText()
+        self.classifyThread = ClassifyThread(path_to_image)
+        self.classifyThread.classifySignal.connect(self.finish_thread, QtCore.Qt.QueuedConnection)
+        self.classifyThread.start()
+        
+
+    def finish_thread(self, res):
+        '''
+        Метод, вызывающийся после окончания выполнения потока
+        '''
+        prediction      = str(res["ImageNet class id"])
+        predicted_class = str(res["Predicted class"])
+        confidence      = str(round(res["Confidence"], 3))
+        self.imageNetId.setText("ImageNet id: " + prediction)
+        self.predictedClass.setText("Predicted class: " + predicted_class)
+        self.confidence_label.setText("Confidence: " + confidence)
     
         
     def load_image(self, image_path):
         '''
         Метод загрузки изображения на QLabel
+
+        Параметры:
             image_path (str): путь к изображению
         '''
         # создаем объект QPixmap из изображения по пути image_path
